@@ -327,12 +327,31 @@ use crate::expand::expand;
 use crate::parse::Item;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::parse_macro_input;
 
 #[proc_macro_attribute]
 pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(args as Args);
-    let mut item = parse_macro_input!(input as Item);
+    let args = match syn::parse::<Args>(args.clone()) {
+        Ok(args) => args,
+        Err(err) => return token_stream_with_error(args, err),
+    };
+
+    let mut item = match syn::parse::<Item>(input.clone()) {
+        Ok(item) => item,
+        Err(err) => return token_stream_with_error(input, err),
+    };
+
     expand(&mut item, args.local);
     TokenStream::from(quote!(#item))
+}
+
+/// Converts the error to a token stream and appends it to the original input.
+///
+/// Returning the original input in addition to the error is good for IDEs which can gracefully
+/// recover and show more precise errors within the macro body.
+///
+/// See <https://github.com/rust-analyzer/rust-analyzer/issues/10468> for more info.
+fn token_stream_with_error(mut input: TokenStream, err: syn::Error) -> TokenStream {
+    let compile_err = TokenStream::from(err.to_compile_error());
+    input.extend(compile_err);
+    return input;
 }
